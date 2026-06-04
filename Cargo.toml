@@ -1,0 +1,56 @@
+[package]
+name = "opus-rs"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.76"
+license = "MIT OR Apache-2.0"
+authors = ["Per Johansson <per@doom.fish>"]
+description = "Safe Rust wrapper around a statically-linked, vendored libopus (fixed-point) — the audio codec mandated by standard WebRTC, built without cc/bindgen/pkg-config"
+keywords = ["opus", "audio", "codec", "webrtc", "voip"]
+categories = ["multimedia::audio", "multimedia::encoding"]
+readme = "README.md"
+build = "build.rs"
+publish = false
+include = [
+    "src/**/*",
+    "build.rs",
+    "build/opus_buildtype_config.h",
+    "vendor/libopus/**/*",
+    "Cargo.toml",
+    "README.md",
+    "CHANGELOG.md",
+    "COVERAGE.md",
+    "LICENSE-*",
+]
+
+[lib]
+name = "opus"
+crate-type = ["lib"]
+
+[dependencies]
+libc = "0.2"
+
+[lints.rust]
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+cargo = { level = "warn", priority = -1 }
+multiple-crate-versions = "allow"
+
+[package.metadata.docs.rs]
+default-target = "aarch64-apple-darwin"
+targets = ["aarch64-apple-darwin", "x86_64-apple-darwin"]
+rustdoc-args = ["--cfg", "docsrs"]
+
+[badges]
+maintenance = { status = "actively-developed" }
+
+[[example]]
+name = "01_version"
+
+[[example]]
+name = "02_encode_file"
+
+[[example]]
+name = "03_decode_file"
