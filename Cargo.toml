@@ -2,7 +2,7 @@
 name = "opus-rs"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.76"
+rust-version = "1.82"
 license = "(MIT OR Apache-2.0) AND BSD-3-Clause"
 authors = ["Per Johansson <per@doom.fish>"]
 description = "Safe Rust wrapper around a statically-linked, vendored libopus (fixed-point) — the audio codec mandated by standard WebRTC, built without cc/bindgen/pkg-config"

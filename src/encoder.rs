@@ -51,7 +51,7 @@ impl Encoder {
                 sample_rate.hz(),
                 channels.count(),
                 application.as_raw(),
-                &mut error,
+                &raw mut error,
             )
         };
         if error != sys::OPUS_OK || raw.is_null() {

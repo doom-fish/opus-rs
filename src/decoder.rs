@@ -40,7 +40,7 @@ impl Decoder {
         let mut error: c_int = sys::OPUS_OK;
         // SAFETY: out-pointer is valid; rate/channels are type-validated.
         let raw =
-            unsafe { sys::opus_decoder_create(sample_rate.hz(), channels.count(), &mut error) };
+            unsafe { sys::opus_decoder_create(sample_rate.hz(), channels.count(), &raw mut error) };
         if error != sys::OPUS_OK || raw.is_null() {
             return Err(OpusError::from_code(error));
         }
