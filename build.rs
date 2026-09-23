@@ -1,15 +1,19 @@
 //! Build script for `opus-rs`.
 //!
 //! Statically compiles the vendored libopus 1.5.2 source tree into `libopus.a`
-//! by invoking `clang` directly through [`std::process::Command`]. No `cc`,
-//! `bindgen`, `pkg-config`, `cmake` or `autoconf` are used — this is the one
-//! explicit C-FFI exception in the workspace and it stays dependency-free.
+//! by invoking the C compiler (`clang` unless `CC` says otherwise) directly
+//! through [`std::process::Command`]. No `cc`, `bindgen`, `pkg-config`,
+//! `cmake` or `autoconf` are used — this is the one explicit C-FFI exception
+//! in the workspace and it stays dependency-free.
 //!
 //! The build is **fixed-point** (`-DFIXED_POINT=1`) with all SIMD intrinsics
-//! disabled, so the exact same portable C is compiled on every architecture.
+//! disabled, so the same portable C is compiled for every supported Apple
+//! target. The clang target triple, deployment target and SDK follow Cargo's
+//! `TARGET`; `CC`, `AR` and `CFLAGS` are honoured; other targets stop with an
+//! error.
 
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{exit, Command};
 
 /// Pinned libopus release. Must match `build/opus_buildtype_config.h`,
@@ -192,12 +196,21 @@ fn main() {
         ));
     }
 
-    let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
-    let arch_flag = match target_arch.as_str() {
-        "aarch64" => "arm64",
-        "x86_64" => "x86_64",
-        other => panic!("opus-rs: unsupported target arch '{other}'"),
-    };
+    let target = env::var("TARGET").unwrap_or_default();
+    let platform = apple_platform(&target);
+    let clang_target = format!(
+        "--target={}-apple-{}{}{}",
+        platform.arch,
+        platform.os,
+        deployment_target(&target, platform.deployment_variable),
+        platform.variant
+    );
+    let sysroot = sdk_root(platform.sdk);
+    let (cc, cc_args) = tool(&target, "CC", "clang");
+    let (ar, ar_args) = tool(&target, "AR", "ar");
+    let cflags: Vec<String> = target_env(&target, "CFLAGS")
+        .map(|flags| flags.split_whitespace().map(str::to_owned).collect())
+        .unwrap_or_default();
 
     let includes = [
         vendor.join("include"),
@@ -219,12 +232,15 @@ fn main() {
         let src = vendor.join(rel);
         let obj = out_dir.join(format!("{}.o", rel.replace(['/', '.'], "_")));
 
-        let mut cmd = Command::new("clang");
-        cmd.arg("-c")
+        let mut cmd = Command::new(&cc);
+        cmd.args(&cc_args)
+            .arg("-c")
             .arg(&src)
             .arg("-o")
             .arg(&obj)
-            .args(["-arch", arch_flag])
+            .arg(&clang_target)
+            .arg("-isysroot")
+            .arg(&sysroot)
             // Portable fixed-point build, no intrinsics.
             .args([
                 "-fPIC",
@@ -244,11 +260,14 @@ fn main() {
         for inc in &includes {
             cmd.arg("-I").arg(inc);
         }
+        cmd.args(&cflags);
 
         let status = cmd
             .status()
-            .unwrap_or_else(|e| panic!("opus-rs: failed to spawn clang for {rel}: {e}"));
-        assert!(status.success(), "opus-rs: clang failed compiling {rel}");
+            .unwrap_or_else(|e| fail(&format!("failed to run `{cc}` for {rel}: {e}")));
+        if !status.success() {
+            fail(&format!("`{cc}` failed compiling {rel}"));
+        }
 
         objects.push(obj);
     }
@@ -256,12 +275,16 @@ fn main() {
     // Archive all objects into a static library with POSIX `ar`.
     let archive = out_dir.join("libopus.a");
     let _ = std::fs::remove_file(&archive);
-    let mut ar = Command::new("ar");
-    ar.arg("rcs").arg(&archive).args(&objects);
-    let status = ar
+    let status = Command::new(&ar)
+        .args(&ar_args)
+        .arg("rcs")
+        .arg(&archive)
+        .args(&objects)
         .status()
-        .unwrap_or_else(|e| panic!("opus-rs: failed to spawn ar: {e}"));
-    assert!(status.success(), "opus-rs: ar failed building libopus.a");
+        .unwrap_or_else(|e| fail(&format!("failed to run `{ar}`: {e}")));
+    if !status.success() {
+        fail(&format!("`{ar}` failed building libopus.a"));
+    }
 
     println!("cargo:rustc-link-search=native={}", out_dir.display());
     println!("cargo:rustc-link-lib=static=opus");
@@ -271,4 +294,156 @@ fn main() {
 fn fail(message: &str) -> ! {
     eprintln!("error: opus-rs: {message}");
     exit(1);
+}
+
+struct ApplePlatform {
+    arch: &'static str,
+    os: &'static str,
+    variant: &'static str,
+    sdk: &'static str,
+    deployment_variable: &'static str,
+}
+
+fn unsupported(target: &str) -> ! {
+    fail(&format!(
+        "unsupported target `{target}`: the vendored libopus build supports Apple targets only \
+         (macOS, iOS, tvOS, watchOS and visionOS devices and simulators, and Mac Catalyst) on \
+         aarch64, arm64e, arm64_32, armv7k, x86_64 and x86_64h"
+    ))
+}
+
+fn apple_platform(target: &str) -> ApplePlatform {
+    if env::var("CARGO_CFG_TARGET_VENDOR").as_deref() != Ok("apple") {
+        unsupported(target);
+    }
+    let arch = match target.split('-').next().unwrap_or_default() {
+        "aarch64" => "arm64",
+        "arm64e" => "arm64e",
+        "arm64_32" => "arm64_32",
+        "armv7k" => "armv7k",
+        "x86_64" => "x86_64",
+        "x86_64h" => "x86_64h",
+        _ => unsupported(target),
+    };
+    let os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    let abi = env::var("CARGO_CFG_TARGET_ABI").unwrap_or_default();
+    let simulator = abi == "sim" || (abi != "macabi" && arch.starts_with("x86_64"));
+    let (os, variant, sdk, deployment_variable) = match (os.as_str(), abi.as_str(), simulator) {
+        ("macos", _, _) => ("macosx", "", "macosx", "MACOSX_DEPLOYMENT_TARGET"),
+        ("ios", "macabi", _) => ("ios", "-macabi", "macosx", "IPHONEOS_DEPLOYMENT_TARGET"),
+        ("ios", _, true) => (
+            "ios",
+            "-simulator",
+            "iphonesimulator",
+            "IPHONEOS_DEPLOYMENT_TARGET",
+        ),
+        ("ios", _, false) => ("ios", "", "iphoneos", "IPHONEOS_DEPLOYMENT_TARGET"),
+        ("tvos", _, true) => (
+            "tvos",
+            "-simulator",
+            "appletvsimulator",
+            "TVOS_DEPLOYMENT_TARGET",
+        ),
+        ("tvos", _, false) => ("tvos", "", "appletvos", "TVOS_DEPLOYMENT_TARGET"),
+        ("watchos", _, true) => (
+            "watchos",
+            "-simulator",
+            "watchsimulator",
+            "WATCHOS_DEPLOYMENT_TARGET",
+        ),
+        ("watchos", _, false) => ("watchos", "", "watchos", "WATCHOS_DEPLOYMENT_TARGET"),
+        ("visionos", _, true) => (
+            "xros",
+            "-simulator",
+            "xrsimulator",
+            "XROS_DEPLOYMENT_TARGET",
+        ),
+        ("visionos", _, false) => ("xros", "", "xros", "XROS_DEPLOYMENT_TARGET"),
+        _ => unsupported(target),
+    };
+    ApplePlatform {
+        arch,
+        os,
+        variant,
+        sdk,
+        deployment_variable,
+    }
+}
+
+fn deployment_target(target: &str, variable: &str) -> String {
+    println!("cargo:rerun-if-env-changed={variable}");
+    if let Some(version) = env::var(variable)
+        .ok()
+        .map(|v| v.trim().to_owned())
+        .filter(|v| !v.is_empty())
+    {
+        return version;
+    }
+    let rustc = env::var("RUSTC").unwrap_or_else(|_| "rustc".to_owned());
+    Command::new(rustc)
+        .args(["--print", "deployment-target", "--target", target])
+        .output()
+        .ok()
+        .filter(|out| out.status.success())
+        .and_then(|out| {
+            String::from_utf8_lossy(&out.stdout)
+                .trim()
+                .rsplit_once('=')
+                .map(|(_, version)| version.trim().to_owned())
+        })
+        .filter(|version| !version.is_empty())
+        .unwrap_or_else(|| {
+            fail(&format!(
+                "cannot determine the deployment target for `{target}`; set {variable}"
+            ))
+        })
+}
+
+fn sdk_root(sdk: &str) -> String {
+    println!("cargo:rerun-if-env-changed=SDKROOT");
+    println!("cargo:rerun-if-env-changed=DEVELOPER_DIR");
+    if let Ok(root) = env::var("SDKROOT") {
+        let matches_target = Path::new(&root)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.to_ascii_lowercase().starts_with(sdk));
+        if matches_target {
+            return root;
+        }
+    }
+    Command::new("xcrun")
+        .args(["--sdk", sdk, "--show-sdk-path"])
+        .output()
+        .ok()
+        .filter(|out| out.status.success())
+        .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_owned())
+        .filter(|path| !path.is_empty())
+        .unwrap_or_else(|| {
+            fail(&format!(
+                "cannot locate the {sdk} SDK with xcrun; install Xcode (or the Command Line \
+                 Tools for macOS) or point SDKROOT at the SDK"
+            ))
+        })
+}
+
+fn target_env(target: &str, name: &str) -> Option<String> {
+    let underscored = target.replace('-', "_");
+    [
+        format!("{name}_{target}"),
+        format!("{name}_{underscored}"),
+        format!("TARGET_{name}"),
+        name.to_owned(),
+    ]
+    .into_iter()
+    .find_map(|key| {
+        println!("cargo:rerun-if-env-changed={key}");
+        env::var(&key).ok().filter(|value| !value.trim().is_empty())
+    })
+}
+
+fn tool(target: &str, name: &str, default: &str) -> (String, Vec<String>) {
+    let value = target_env(target, name).unwrap_or_else(|| default.to_owned());
+    let mut words = value.split_whitespace().map(str::to_owned);
+    let program = words.next().unwrap_or_else(|| default.to_owned());
+    (program, words.collect())
 }
