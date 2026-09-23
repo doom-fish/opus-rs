@@ -1,7 +1,7 @@
 # Coverage
 
 What this crate wraps from libopus 1.5.2, and what is intentionally deferred.
-The goal of `0.1.0` is the **single-stream encoder/decoder** path needed for
+The goal of `0.2.0` is the **single-stream encoder/decoder** path needed for
 real-time WebRTC audio.
 
 ## Encoder (`OpusEncoder`)
@@ -32,7 +32,9 @@ real-time WebRTC audio.
 | --- | --- | --- |
 | Create / destroy | `Decoder::new` / `Drop` | `opus_decoder_create` / `_destroy` |
 | Decode to `i16` PCM | `Decoder::decode` | `opus_decode` |
-| Packet-loss concealment | `Decoder::decode_lost` | `opus_decode` (null packet) |
+| Packet-loss concealment (explicit frame size) | `Decoder::decode_lost` | `opus_decode` (null packet) |
+| In-band FEC recovery (explicit frame size) | `Decoder::decode_fec` | `opus_decode` (`decode_fec = 1`) |
+| Packet duration | `Decoder::packet_duration` | `opus_decoder_get_nb_samples` |
 | FEC used last decode | `get_in_band_fec` | tracked client-side |
 | Gain | `set_gain` / `gain` | `OPUS_SET_GAIN` / `OPUS_GET_GAIN` |
 | Bandwidth | `bandwidth` | `OPUS_GET_BANDWIDTH` |
@@ -50,13 +52,13 @@ real-time WebRTC audio.
 
 ## Deferred (not yet wrapped)
 
-These libopus features are not exposed in `0.1.0`. None are required for the
+These libopus features are not exposed in `0.2.0`. None are required for the
 single-stream real-time audio use case.
 
 - **Multistream** encoder/decoder (`opus_multistream_*`).
 - **Projection** ambisonics API (`opus_projection_*`).
-- **Repacketizer** (`opus_repacketizer_*`) and packet inspection helpers
-  (`opus_packet_get_*`, `opus_packet_parse`).
+- **Repacketizer** (`opus_repacketizer_*`) and packet inspection helpers other
+  than the duration (`opus_packet_get_bandwidth`, `opus_packet_parse`, ...).
 - **Surround** channel-mapping helpers.
 - **DRED / deep-PLC** (`ENABLE_DEEP_PLC`) and **OSCE** (`ENABLE_OSCE`) — the
   vendored tree is stripped of `dnn/` and these are compiled out.
@@ -66,14 +68,20 @@ single-stream real-time audio use case.
   the `i16` paths are wrapped. (The float *analysis* sources are still compiled
   because `DISABLE_FLOAT_API` is not defined.)
 - SIMD intrinsic code paths (ARM NEON, x86 SSE/AVX) — disabled in favour of the
-  portable fixed-point C so one build serves every architecture.
+  portable fixed-point C, so one build serves every supported Apple target.
+- **Non-Apple targets** — `build.rs` stops with an error; it only knows how to
+  drive clang with Apple target triples and SDKs.
 - Less common encoder CTLs: prediction-disabled, phase-inversion-disabled,
   expert frame-duration, LSB depth, force-channels.
 
 ## Build facts
 
-- Vendored libopus: **1.5.2**, ~3.0 MB after stripping.
-- `build.rs`: 262 lines, compiles ~110 C translation units.
+- Vendored libopus: **1.5.2**, ~2.5 MB after stripping; all 252 vendored files
+  are byte-identical to upstream `opus-1.5.2.tar.gz` (including
+  `package_version`).
+- `build.rs`: 449 lines, compiles 132 C translation units for the clang
+  `--target` derived from Cargo's `TARGET`, with the deployment target, SDK
+  and `CC`/`AR`/`CFLAGS` taken from the environment.
 - Fixed-point build: `-DFIXED_POINT=1 -DOPUS_BUILD=1 -DENABLE_HARDENING=1`
   (upstream's default run-time checks: a broken internal invariant aborts
   instead of corrupting memory), no intrinsics, no

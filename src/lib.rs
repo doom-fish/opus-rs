@@ -18,9 +18,11 @@
 //! `build.rs`, which invokes `clang` directly through
 //! [`std::process::Command`] — there is **no** dependency on `cc`, `bindgen`,
 //! `pkg-config`, `cmake` or `autoconf`. The build is **fixed-point**
-//! (`-DFIXED_POINT=1`) with all SIMD intrinsics disabled, so the identical
-//! portable C compiles on every architecture. The only runtime dependency is
-//! `libc`.
+//! (`-DFIXED_POINT=1`) with all SIMD intrinsics disabled, custom modes
+//! compiled out and upstream's run-time hardening enabled. It supports Apple
+//! targets only: macOS, iOS, tvOS, watchOS and visionOS (devices and
+//! simulators) and Mac Catalyst; other targets fail to build with an error.
+//! The only runtime dependency is `libc`.
 //!
 //! ## Quick start
 //!
