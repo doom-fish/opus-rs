@@ -56,6 +56,9 @@ extern "C" {
 
     pub fn opus_decoder_destroy(st: *mut OpusDecoder);
 
+    pub fn opus_decoder_get_nb_samples(dec: *const OpusDecoder, data: *const u8, len: i32)
+        -> c_int;
+
     pub fn opus_decode(
         st: *mut OpusDecoder,
         data: *const u8,

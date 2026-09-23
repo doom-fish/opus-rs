@@ -31,7 +31,7 @@ fn random_packets_are_rejected_or_decoded_within_bounds() {
         for len in (1..=96).chain([255, 256, 1275, 1500, 4000]) {
             for _ in 0..40 {
                 let packet: Vec<u8> = (0..len).map(|_| next_byte(&mut seed)).collect();
-                assert_bounded(dec.decode(&packet, &mut out, false));
+                assert_bounded(dec.decode(&packet, &mut out));
             }
         }
     }
@@ -49,13 +49,13 @@ fn truncated_packets_are_handled() {
     let n = enc.encode(&pcm, &mut packet).expect("encode");
     let mut out = vec![0i16; MAX_FRAME * 2];
     for end in 1..=n {
-        assert_bounded(dec.decode(&packet[..end], &mut out, false));
+        assert_bounded(dec.decode(&packet[..end], &mut out));
     }
     let mut corrupted = packet[..n].to_vec();
     let mut seed = 7_u32;
     for _ in 0..500 {
         let i = usize::from(next_byte(&mut seed)) % corrupted.len();
         corrupted[i] ^= next_byte(&mut seed) | 1;
-        assert_bounded(dec.decode(&corrupted, &mut out, false));
+        assert_bounded(dec.decode(&corrupted, &mut out));
     }
 }

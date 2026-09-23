@@ -32,7 +32,7 @@ fn main() -> io::Result<()> {
         let packet = &framed[pos..pos + len];
         pos += len;
 
-        let samples = dec.decode(packet, &mut pcm, false).expect("decode");
+        let samples = dec.decode(packet, &mut pcm).expect("decode");
         for &s in &pcm[..samples] {
             stdout.write_all(&s.to_le_bytes())?;
         }

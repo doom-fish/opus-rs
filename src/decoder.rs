@@ -17,11 +17,12 @@ use libc::c_int;
 /// let mut dec = Decoder::new(SampleRate::Hz48000, Channels::Mono).unwrap();
 /// let packet: &[u8] = &[/* ... */];
 /// let mut pcm = vec![0i16; 960]; // 20 ms @ 48 kHz mono
-/// let _m = dec.decode(packet, &mut pcm, false).unwrap();
+/// let _m = dec.decode(packet, &mut pcm).unwrap();
 /// ```
 pub struct Decoder {
     raw: NonNull<sys::OpusDecoder>,
     channels: Channels,
+    sample_rate: SampleRate,
     last_fec_used: bool,
 }
 
@@ -47,6 +48,7 @@ impl Decoder {
             // SAFETY: checked non-null above.
             raw: unsafe { NonNull::new_unchecked(raw) },
             channels,
+            sample_rate,
             last_fec_used: false,
         })
     }
@@ -57,21 +59,88 @@ impl Decoder {
     /// samples, where `frame_size` is the duration of the packet. Returns the
     /// number of samples **per channel** decoded.
     ///
-    /// Set `fec` to `true` to request in-band forward-error-correction data
-    /// for the *previous* lost frame (the packet passed must be the one that
-    /// follows the gap).
+    /// # Errors
+    /// Returns an [`OpusError`] for a corrupt packet or undersized buffer, and
+    /// `BadArg` for an empty packet (use [`decode_lost`](Self::decode_lost)
+    /// for a lost packet, since libopus would conceal the whole buffer).
+    pub fn decode(&mut self, packet: &[u8], output: &mut [i16]) -> Result<usize> {
+        if packet.is_empty() {
+            return Err(OpusError::from_code(sys::OPUS_BAD_ARG));
+        }
+        let frame_size = len_to_c_int(output.len() / self.channels.count_usize())?;
+        self.decode_into(packet, output, frame_size, false)
+    }
+
+    #[allow(missing_docs, clippy::missing_errors_doc)]
+    pub fn decode_fec(
+        &mut self,
+        packet: &[u8],
+        output: &mut [i16],
+        frame_size: usize,
+    ) -> Result<usize> {
+        if packet.is_empty() {
+            return Err(OpusError::from_code(sys::OPUS_BAD_ARG));
+        }
+        let frame_size = self.concealment_frame_size(output.len(), frame_size)?;
+        self.decode_into(packet, output, frame_size, true)
+    }
+
+    /// Perform packet-loss concealment for a single missing frame.
+    ///
+    /// Call this when a packet is lost and no FEC is available: libopus
+    /// synthesises plausible audio to fill the gap. `frame_size` is the
+    /// duration to conceal in samples per channel: a multiple of 2.5 ms up to
+    /// 120 ms, normally the duration of the lost packet. `output` must hold
+    /// `frame_size * channels` samples; only that prefix is written. Returns
+    /// samples per channel.
     ///
     /// # Errors
-    /// Returns an [`OpusError`] for a corrupt packet or undersized buffer.
-    pub fn decode(&mut self, packet: &[u8], output: &mut [i16], fec: bool) -> Result<usize> {
-        let frame_size = len_to_c_int(output.len() / self.channels.count_usize())?;
-        let packet_len = len_to_c_int(packet.len())?;
-        // SAFETY: pointers/lengths derive from the slices; libopus writes at
-        // most frame_size*channels samples into output.
+    /// Returns `BadArg` for an invalid `frame_size`, `BufferTooSmall` if
+    /// `output` cannot hold it, or another [`OpusError`] on a decode failure.
+    pub fn decode_lost(&mut self, output: &mut [i16], frame_size: usize) -> Result<usize> {
+        let frame_size = self.concealment_frame_size(output.len(), frame_size)?;
+        self.decode_into(&[], output, frame_size, false)
+    }
+
+    #[allow(missing_docs, clippy::missing_errors_doc)]
+    pub fn packet_duration(&self, packet: &[u8]) -> Result<usize> {
+        let len = len_to_c_int(packet.len())?;
+        check_count(unsafe {
+            sys::opus_decoder_get_nb_samples(self.raw.as_ptr(), packet.as_ptr(), len)
+        })
+    }
+
+    fn concealment_frame_size(&self, output_len: usize, frame_size: usize) -> Result<c_int> {
+        let quantum = self.sample_rate.samples_per_2_5_ms();
+        if frame_size == 0 || frame_size % quantum != 0 || frame_size > quantum * 48 {
+            return Err(OpusError::from_code(sys::OPUS_BAD_ARG));
+        }
+        if output_len < frame_size * self.channels.count_usize() {
+            return Err(OpusError::from_code(sys::OPUS_BUFFER_TOO_SMALL));
+        }
+        len_to_c_int(frame_size)
+    }
+
+    fn decode_into(
+        &mut self,
+        packet: &[u8],
+        output: &mut [i16],
+        frame_size: c_int,
+        fec: bool,
+    ) -> Result<usize> {
+        let (data, packet_len) = if packet.is_empty() {
+            (core::ptr::null(), 0)
+        } else {
+            (packet.as_ptr(), len_to_c_int(packet.len())?)
+        };
+        // SAFETY: pointers/lengths derive from the slices; every caller passes
+        // a frame_size with frame_size*channels <= output.len(), and libopus
+        // writes at most that many samples. A null data pointer with len 0 is
+        // the libopus convention for packet-loss concealment.
         let n = unsafe {
             sys::opus_decode(
                 self.raw.as_ptr(),
-                packet.as_ptr(),
+                data,
                 packet_len,
                 output.as_mut_ptr(),
                 frame_size,
@@ -80,33 +149,6 @@ impl Decoder {
         };
         let samples = check_count(n)?;
         self.last_fec_used = fec;
-        Ok(samples)
-    }
-
-    /// Perform packet-loss concealment for a single missing frame.
-    ///
-    /// Call this when a packet is lost and no FEC is available: libopus
-    /// synthesises plausible audio to fill the gap. `output` sizes the frame
-    /// exactly as in [`decode`](Self::decode). Returns samples per channel.
-    ///
-    /// # Errors
-    /// Returns an [`OpusError`] on a decode failure.
-    pub fn decode_lost(&mut self, output: &mut [i16]) -> Result<usize> {
-        let frame_size = len_to_c_int(output.len() / self.channels.count_usize())?;
-        // SAFETY: a null data pointer with len 0 is the libopus convention for
-        // packet-loss concealment.
-        let n = unsafe {
-            sys::opus_decode(
-                self.raw.as_ptr(),
-                core::ptr::null(),
-                0,
-                output.as_mut_ptr(),
-                frame_size,
-                0,
-            )
-        };
-        let samples = check_count(n)?;
-        self.last_fec_used = false;
         Ok(samples)
     }
 
@@ -131,14 +173,15 @@ impl Decoder {
         Ok(value)
     }
 
-    /// Whether the most recent [`decode`](Self::decode) call requested in-band
-    /// forward error correction.
+    /// Whether the most recent decode call was a
+    /// [`decode_fec`](Self::decode_fec) in-band forward error correction.
     ///
     /// libopus has no dedicated *decoder*-side FEC getter — FEC is an encoder
-    /// decision and the decoder transparently consumes it when you pass
-    /// `fec = true`. This convenience getter reports whether the last decode
+    /// decision and the decoder transparently consumes it when you call
+    /// `decode_fec`. This convenience getter reports whether the last decode
     /// was performed in FEC mode (and is `false` after a
-    /// [`decode_lost`](Self::decode_lost) concealment or before any decode).
+    /// [`decode`](Self::decode) or [`decode_lost`](Self::decode_lost) call, or
+    /// before any decode).
     #[must_use]
     pub const fn get_in_band_fec(&self) -> bool {
         self.last_fec_used

@@ -33,6 +33,16 @@ impl SampleRate {
         }
     }
 
+    pub(crate) const fn samples_per_2_5_ms(self) -> usize {
+        match self {
+            Self::Hz8000 => 20,
+            Self::Hz12000 => 30,
+            Self::Hz16000 => 40,
+            Self::Hz24000 => 60,
+            Self::Hz48000 => 120,
+        }
+    }
+
     /// Build a `SampleRate` from a raw Hz value, if it is a valid Opus rate.
     #[must_use]
     pub const fn from_hz(hz: i32) -> Option<Self> {

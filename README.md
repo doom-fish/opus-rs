@@ -51,7 +51,7 @@ let payload = &packet[..n];
 
 let mut dec = Decoder::new(SampleRate::Hz48000, Channels::Mono)?;
 let mut pcm_out = vec![0i16; 960];
-let _m = dec.decode(payload, &mut pcm_out, /* fec = */ false)?;
+let _m = dec.decode(payload, &mut pcm_out)?;
 # Ok::<(), opus::OpusError>(())
 ```
 

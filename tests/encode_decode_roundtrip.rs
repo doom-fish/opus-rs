@@ -44,7 +44,7 @@ fn sine_round_trip_within_rms_bound() {
     for _ in 0..5 {
         let pcm = sine_frame(&mut phase, 440.0, 0.5);
         let n = enc.encode(&pcm, &mut packet).expect("encode");
-        dec.decode(&packet[..n], &mut out, false).expect("decode");
+        dec.decode(&packet[..n], &mut out).expect("decode");
     }
 
     // Now measure on steady-state frames. Opus has algorithmic delay
@@ -57,7 +57,7 @@ fn sine_round_trip_within_rms_bound() {
     for _ in 0..n_frames {
         let pcm = sine_frame(&mut phase, 440.0, 0.5);
         let n = enc.encode(&pcm, &mut packet).expect("encode");
-        let m = dec.decode(&packet[..n], &mut out, false).expect("decode");
+        let m = dec.decode(&packet[..n], &mut out).expect("decode");
         assert_eq!(m, FRAME, "decoded full frame");
         for i in 0..FRAME {
             sq_in += f64::from(pcm[i]) * f64::from(pcm[i]);
@@ -87,6 +87,6 @@ fn stereo_round_trip() {
     let mut out = vec![0i16; FRAME * 2];
 
     let n = enc.encode(&pcm, &mut packet).expect("encode");
-    let m = dec.decode(&packet[..n], &mut out, false).expect("decode");
+    let m = dec.decode(&packet[..n], &mut out).expect("decode");
     assert_eq!(m, FRAME, "samples per channel");
 }

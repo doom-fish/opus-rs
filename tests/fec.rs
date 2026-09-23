@@ -40,11 +40,11 @@ fn fec_encode_and_decode_lost() {
     let pkt_b = packet[..nb].to_vec();
 
     // Normal decode of A.
-    let m = dec.decode(&pkt_a, &mut out, false).expect("decode A");
+    let m = dec.decode(&pkt_a, &mut out).expect("decode A");
     assert_eq!(m, FRAME);
 
     // Simulate A being lost: decode B with fec=true to recover A from B's FEC.
-    let recovered = dec.decode(&pkt_b, &mut out, true).expect("decode B fec");
+    let recovered = dec.decode_fec(&pkt_b, &mut out, FRAME).expect("decode B fec");
     assert_eq!(recovered, FRAME, "FEC decode yields a full frame");
 }
 
@@ -61,10 +61,10 @@ fn packet_loss_concealment() {
     // Decode one real packet to warm the decoder.
     let pcm = noisy_frame(&mut seed);
     let n = enc.encode(&pcm, &mut packet).expect("encode");
-    dec.decode(&packet[..n], &mut out, false).expect("decode");
+    dec.decode(&packet[..n], &mut out).expect("decode");
 
     // Now conceal a lost packet.
-    let concealed = dec.decode_lost(&mut out).expect("plc");
+    let concealed = dec.decode_lost(&mut out, FRAME).expect("plc");
     assert_eq!(concealed, FRAME, "PLC produces a full frame");
 
     // The in-band-fec helper should reflect the last decode (non-FEC here).

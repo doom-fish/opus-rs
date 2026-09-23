@@ -35,7 +35,7 @@ fn all_frame_sizes_48k_mono() {
 
         let mut out = vec![0i16; samples];
         let m = dec
-            .decode(&packet[..n], &mut out, false)
+            .decode(&packet[..n], &mut out)
             .unwrap_or_else(|e| panic!("decode {ms}ms: {e}"));
         assert_eq!(m, samples, "{ms}ms decoded sample count");
     }
@@ -60,7 +60,7 @@ fn frame_sizes_across_sample_rates() {
         let mut packet = vec![0u8; 4000];
         let n = enc.encode(&pcm, &mut packet).expect("encode");
         let mut out = vec![0i16; samples];
-        let m = dec.decode(&packet[..n], &mut out, false).expect("decode");
+        let m = dec.decode(&packet[..n], &mut out).expect("decode");
         assert_eq!(m, samples, "{}Hz 20ms", rate.hz());
     }
 }
