@@ -10,7 +10,7 @@
 
 use std::env;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{exit, Command};
 
 /// Pinned libopus release. Must match `build/opus_buildtype_config.h`,
 /// `CHANGELOG.md` and the vendored tree under `vendor/libopus/`.
@@ -185,6 +185,13 @@ fn main() {
         return;
     }
 
+    let recorded = std::fs::read_to_string(vendor.join("package_version")).unwrap_or_default();
+    if recorded.trim() != format!("PACKAGE_VERSION=\"{OPUS_VERSION}\"") {
+        fail(&format!(
+            "vendor/libopus/package_version does not record libopus {OPUS_VERSION}"
+        ));
+    }
+
     let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
     let arch_flag = match target_arch.as_str() {
         "aarch64" => "arm64",
@@ -259,4 +266,9 @@ fn main() {
     println!("cargo:rustc-link-search=native={}", out_dir.display());
     println!("cargo:rustc-link-lib=static=opus");
     println!("cargo:warning=opus-rs: built vendored libopus {OPUS_VERSION} (fixed-point, no intrinsics)");
+}
+
+fn fail(message: &str) -> ! {
+    eprintln!("error: opus-rs: {message}");
+    exit(1);
 }
