@@ -7,9 +7,10 @@
  * build.rs, so it does NOT rely on the `HAVE_CONFIG_H` machinery.
  *
  * We deliberately keep this tiny: the actual feature selection (FIXED_POINT,
- * OPUS_BUILD, VAR_ARRAYS, CUSTOM_MODES, intrinsics-off) is driven by `-D`
- * flags on the clang command line, not from here. Only the two values that
- * libopus genuinely reads from a config header live here.
+ * OPUS_BUILD, VAR_ARRAYS, ENABLE_HARDENING, intrinsics-off; CUSTOM_MODES left
+ * undefined) is driven by `-D` flags on the clang command line, not from
+ * here. Only the two values that libopus genuinely reads from a config header
+ * live here.
  */
 #ifndef OPUS_BUILDTYPE_CONFIG_H
 #define OPUS_BUILDTYPE_CONFIG_H

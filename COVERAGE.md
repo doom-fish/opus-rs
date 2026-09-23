@@ -60,7 +60,8 @@ single-stream real-time audio use case.
 - **Surround** channel-mapping helpers.
 - **DRED / deep-PLC** (`ENABLE_DEEP_PLC`) and **OSCE** (`ENABLE_OSCE`) — the
   vendored tree is stripped of `dnn/` and these are compiled out.
-- **Custom modes** (`CUSTOM_MODES` is `0`).
+- **Custom modes**: `CUSTOM_MODES` is left undefined, as in upstream's default
+  build, so the non-Opus custom-mode code paths are compiled out.
 - **Float PCM** entry points (`opus_encode_float` / `opus_decode_float`); only
   the `i16` paths are wrapped. (The float *analysis* sources are still compiled
   because `DISABLE_FLOAT_API` is not defined.)
@@ -73,6 +74,8 @@ single-stream real-time audio use case.
 
 - Vendored libopus: **1.5.2**, ~3.0 MB after stripping.
 - `build.rs`: 262 lines, compiles ~110 C translation units.
-- Fixed-point build: `-DFIXED_POINT=1 -DOPUS_BUILD=1`, no intrinsics, no
+- Fixed-point build: `-DFIXED_POINT=1 -DOPUS_BUILD=1 -DENABLE_HARDENING=1`
+  (upstream's default run-time checks: a broken internal invariant aborts
+  instead of corrupting memory), no intrinsics, no
   `cc`/`bindgen`/`pkg-config`/`cmake`/`autoconf`.
 - Runtime dependency: `libc` only.

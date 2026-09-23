@@ -228,7 +228,7 @@ fn main() {
                 "-DOPUS_BUILD=1",
                 "-DHAVE_LRINTF=1",
                 "-DVAR_ARRAYS=1",
-                "-DCUSTOM_MODES=0",
+                "-DENABLE_HARDENING=1",
             ])
             // Force-include our minimal config header (PACKAGE_VERSION etc.).
             .arg("-include")
