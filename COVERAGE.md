@@ -10,7 +10,7 @@ real-time WebRTC audio.
 | --- | --- | --- |
 | Create / destroy | `Encoder::new` / `Drop` | `opus_encoder_create` / `_destroy` |
 | Encode `i16` PCM | `Encoder::encode` | `opus_encode` |
-| Bitrate (bps) | `set_bitrate` / `bitrate` | `OPUS_SET_BITRATE` / `_GET_` |
+| Bitrate (bps) | `set_bitrate` / `bitrate` | `OPUS_SET_BITRATE` / `_GET_`; a value of zero or less is rejected rather than read as auto (-1000) or max (-1) |
 | Bitrate mode (auto/max/bps) | `set_bitrate_mode` | `OPUS_SET_BITRATE` |
 | Complexity | `set_complexity` / `complexity` | `OPUS_SET_COMPLEXITY` / `_GET_` |
 | VBR | `set_vbr` / `vbr` | `OPUS_SET_VBR` / `_GET_` |

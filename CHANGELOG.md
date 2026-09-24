@@ -40,6 +40,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   to conceal in samples per channel, a multiple of 2.5 ms up to 120 ms.
 - `Decoder::decode` and `Decoder::decode_fec` reject an empty packet with
   `BadArg`.
+- **Breaking:** `Encoder::set_bitrate` and
+  `Encoder::set_bitrate_mode(Bitrate::BitsPerSecond(_))` reject a bitrate of
+  zero or less with `BadArg`. libopus reads -1 as the maximum bitrate and
+  -1000 as automatic, so those values silently switched the mode; use
+  `Bitrate::Max` or `Bitrate::Auto`.
+- **Breaking:** `Encoder::encode` rejects PCM whose length is not a multiple
+  of the channel count with `BadArg` instead of ignoring the trailing samples.
 - `rust-version` is 1.82.
 
 ### Added

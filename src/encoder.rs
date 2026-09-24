@@ -74,6 +74,9 @@ impl Encoder {
     /// Returns an [`OpusError`] if the frame size is invalid or the output
     /// buffer is too small.
     pub fn encode(&mut self, pcm: &[i16], output: &mut [u8]) -> Result<usize> {
+        if pcm.len() % self.channels.count_usize() != 0 {
+            return Err(OpusError::from_code(sys::OPUS_BAD_ARG));
+        }
         let frame_size = len_to_c_int(pcm.len() / self.channels.count_usize())?;
         let max_bytes = len_to_c_int(output.len())?;
         // SAFETY: pointers/lengths derive from the slices; libopus reads
@@ -124,6 +127,9 @@ impl Encoder {
     /// # Errors
     /// Returns an [`OpusError`] on an out-of-range value.
     pub fn set_bitrate_mode(&mut self, bitrate: Bitrate) -> Result<()> {
+        if matches!(bitrate, Bitrate::BitsPerSecond(bps) if bps <= 0) {
+            return Err(OpusError::from_code(sys::OPUS_BAD_ARG));
+        }
         self.ctl_set(sys::OPUS_SET_BITRATE_REQUEST, bitrate.as_raw())
     }
 

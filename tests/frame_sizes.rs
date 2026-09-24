@@ -64,3 +64,16 @@ fn frame_sizes_across_sample_rates() {
         assert_eq!(m, samples, "{}Hz 20ms", rate.hz());
     }
 }
+
+#[test]
+fn stereo_pcm_must_hold_whole_frames() {
+    let mut enc =
+        Encoder::new(SampleRate::Hz48000, Channels::Stereo, Application::Voip).expect("encoder");
+    let mut packet = vec![0u8; 4000];
+    let err = enc
+        .encode(&vec![0i16; 1921], &mut packet)
+        .expect_err("a trailing half frame is rejected");
+    assert_eq!(err.kind(), opus::OpusErrorKind::BadArg);
+    let n = enc.encode(&vec![0i16; 1920], &mut packet).expect("encode");
+    assert!(n > 0);
+}

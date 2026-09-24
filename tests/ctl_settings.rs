@@ -1,6 +1,8 @@
 //! Round-trip every CTL setter/getter the safe API exposes.
 
-use opus::{Application, Bandwidth, Bitrate, Channels, Decoder, Encoder, SampleRate, Signal};
+use opus::{
+    Application, Bandwidth, Bitrate, Channels, Decoder, Encoder, OpusErrorKind, SampleRate, Signal,
+};
 
 #[test]
 fn encoder_ctl_setters_and_getters() {
@@ -80,4 +82,22 @@ fn bad_arguments_are_errors() {
     let mut enc =
         Encoder::new(SampleRate::Hz48000, Channels::Mono, Application::Voip).expect("encoder");
     assert!(enc.set_complexity(99).is_err(), "complexity 99 rejected");
+}
+
+#[test]
+fn non_positive_bitrates_are_not_mapped_to_auto_or_max() {
+    let mut enc =
+        Encoder::new(SampleRate::Hz48000, Channels::Mono, Application::Voip).expect("encoder");
+    enc.set_bitrate(48_000).expect("set bitrate");
+    for bps in [0, -1, -1000, i32::MIN] {
+        let err = enc.set_bitrate(bps).expect_err("non-positive bitrate");
+        assert_eq!(err.kind(), OpusErrorKind::BadArg, "{bps}");
+        let err = enc
+            .set_bitrate_mode(Bitrate::BitsPerSecond(bps))
+            .expect_err("non-positive bitrate");
+        assert_eq!(err.kind(), OpusErrorKind::BadArg, "{bps}");
+    }
+    assert_eq!(enc.bitrate().expect("get bitrate"), Bitrate::BitsPerSecond(48_000));
+    enc.set_bitrate_mode(Bitrate::Auto).expect("set bitrate auto");
+    enc.set_bitrate_mode(Bitrate::Max).expect("set bitrate max");
 }
