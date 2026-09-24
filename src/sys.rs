@@ -5,9 +5,9 @@
 //! Rust side; we only ever hold pointers handed back by libopus.
 //!
 //! The CTL functions (`opus_encoder_ctl` / `opus_decoder_ctl`) are variadic in
-//! C. We declare the two concrete shapes we actually use — `(state, request,
-//! i32)` for setters and `(state, request, *mut i32)` for getters — rather
-//! than going through a true `...` variadic, which keeps the calls type-safe.
+//! C and are declared variadic here: on Apple arm64 variadic arguments are
+//! passed on the stack, so a fixed-arity declaration would put them in the
+//! wrong place.
 
 #![allow(non_camel_case_types)]
 // This is the raw, 1:1 FFI surface; the constants and functions are documented
